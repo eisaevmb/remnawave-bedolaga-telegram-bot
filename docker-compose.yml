@@ -84,3 +84,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  
+  cabinet-frontend:
+    image: ghcr.io/bedolaga-dev/bedolaga-cabinet:latest
+    container_name: cabinet_frontend
+    restart: unless-stopped
+    expose:
+      - 80
