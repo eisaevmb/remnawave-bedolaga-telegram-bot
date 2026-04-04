@@ -87,7 +87,7 @@ services:
 
   
   cabinet-frontend:
-    image: ghcr.io/bedolaga-dev/bedolaga-cabinet:latest
+    image: ghcr.io/bedolaga-dev/bedolaga-cabinet:1.44.1
     container_name: cabinet_frontend
     restart: unless-stopped
     env_file:
