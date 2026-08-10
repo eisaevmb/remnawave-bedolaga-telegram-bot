@@ -145,6 +145,7 @@ class PromoCodeType(Enum):
     TRIAL_SUBSCRIPTION = 'trial_subscription'
     PROMO_GROUP = 'promo_group'
     DISCOUNT = 'discount'  # Одноразовая процентная скидка (balance_bonus_kopeks = процент, subscription_days = часы)
+    BALANCE_AND_DAYS = 'balance_and_days'  # Комбинированный: и бонус на баланс, и дни подписки одним кодом
 
 
 class PaymentMethod(Enum):
@@ -162,6 +163,17 @@ class PaymentMethod(Enum):
     KASSA_AI = 'kassa_ai'
     RIOPAY = 'riopay'
     SEVERPAY = 'severpay'
+    APPLE_IAP = 'apple_iap'
+    PAYPEAR = 'paypear'
+    ROLLYPAY = 'rollypay'
+    OVERPAY = 'overpay'
+    AURAPAY = 'aurapay'
+    ETOPLATEZHI = 'etoplatezhi'
+    ANTILOPAY = 'antilopay'
+    JUPITER = 'jupiter'
+    CISPAY = 'cispay'
+    DONUT = 'donut'
+    LAVA = 'lava'
     MANUAL = 'manual'
     BALANCE = 'balance'
 
@@ -323,6 +335,116 @@ class CryptoBotPayment(Base):
 
     def __repr__(self):
         return f'<CryptoBotPayment(id={self.id}, invoice_id={self.invoice_id}, amount={self.amount} {self.asset}, status={self.status})>'
+
+
+class AppleTransaction(Base):
+    __tablename__ = 'apple_transactions'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+
+    transaction_id = Column(String(64), unique=True, nullable=False, index=True)
+    original_transaction_id = Column(String(64), nullable=True, index=True)
+    product_id = Column(String(128), nullable=False)
+    bundle_id = Column(String(255), nullable=False)
+    amount_kopeks = Column(Integer, nullable=False)
+    environment = Column(String(16), nullable=False)
+    app_account_token = Column(String(36), nullable=True, index=True)
+    web_order_line_item_id = Column(String(64), unique=True, nullable=True, index=True)
+    storefront = Column(String(16), nullable=True)
+    currency = Column(String(3), nullable=True)
+    price_micros = Column(BigInteger, nullable=True)
+    purchase_date = Column(AwareDateTime(), nullable=True)
+    revocation_date = Column(AwareDateTime(), nullable=True)
+    revocation_reason = Column(String(50), nullable=True)
+
+    status = Column(String(50), default='verified')
+    is_paid = Column(Boolean, default=True)
+    paid_at = Column(AwareDateTime(), nullable=True)
+    credited_at = Column(AwareDateTime(), nullable=True)
+    refunded_at = Column(AwareDateTime(), nullable=True)
+    refund_reversed_at = Column(AwareDateTime(), nullable=True)
+
+    transaction_id_fk = Column(Integer, ForeignKey('transactions.id'), nullable=True)
+    signed_transaction_hash = Column(String(64), nullable=True, index=True)
+    metadata_json = Column(JSON, nullable=True)
+
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+    user = relationship('User', backref='apple_transactions')
+    transaction = relationship('Transaction', backref='apple_transaction')
+
+    @property
+    def amount_rubles(self) -> float:
+        return self.amount_kopeks / 100
+
+    def __repr__(self):
+        return f'<AppleTransaction(id={self.id}, txn={self.transaction_id}, product={self.product_id}, status={self.status})>'
+
+
+class AppleIAPAccount(Base):
+    __tablename__ = 'apple_iap_accounts'
+    __table_args__ = (
+        UniqueConstraint('user_id', name='uq_apple_iap_accounts_user_id'),
+        UniqueConstraint('account_token_uuid', name='uq_apple_iap_accounts_token'),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    account_token_uuid = Column(String(36), nullable=False)
+    created_at = Column(AwareDateTime(), default=func.now())
+    rotated_at = Column(AwareDateTime(), nullable=True)
+    disabled_at = Column(AwareDateTime(), nullable=True)
+
+    user = relationship('User', backref='apple_iap_account')
+
+    def __repr__(self):
+        return f'<AppleIAPAccount(id={self.id}, user_id={self.user_id})>'
+
+
+class AppleNotification(Base):
+    __tablename__ = 'apple_notifications'
+
+    id = Column(Integer, primary_key=True, index=True)
+    notification_uuid = Column(String(64), unique=True, nullable=False, index=True)
+    notification_type = Column(String(64), nullable=False, index=True)
+    subtype = Column(String(64), nullable=True)
+    environment = Column(String(16), nullable=True, index=True)
+    transaction_id = Column(String(64), nullable=True, index=True)
+    original_transaction_id = Column(String(64), nullable=True, index=True)
+    status = Column(String(32), nullable=False, default='received')
+    error = Column(Text, nullable=True)
+    payload_hash = Column(String(64), unique=True, nullable=False, index=True)
+    metadata_json = Column(JSON, nullable=True)
+    received_at = Column(AwareDateTime(), default=func.now())
+    processed_at = Column(AwareDateTime(), nullable=True)
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+    def __repr__(self):
+        return (
+            f'<AppleNotification(uuid={self.notification_uuid}, type={self.notification_type}, status={self.status})>'
+        )
+
+
+class AppleIAPAbuseEvent(Base):
+    __tablename__ = 'apple_iap_abuse_events'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+    event_type = Column(String(64), nullable=False, index=True)
+    severity = Column(String(16), nullable=False, default='warning')
+    transaction_id = Column(String(64), nullable=True, index=True)
+    product_id = Column(String(128), nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    details_json = Column(JSON, nullable=True)
+    created_at = Column(AwareDateTime(), default=func.now())
+
+    user = relationship('User', backref='apple_iap_abuse_events')
+
+    def __repr__(self):
+        return f'<AppleIAPAbuseEvent(type={self.event_type}, user_id={self.user_id})>'
 
 
 class HeleketPayment(Base):
@@ -560,6 +682,110 @@ class PlategaPayment(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
         return f'<PlategaPayment(id={self.id}, transaction_id={self.platega_transaction_id}, amount={self.amount_rubles}₽, status={self.status}, method={self.payment_method_code})>'
+
+
+class PlategaSubscription(Base):
+    __tablename__ = 'platega_subscriptions'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    subscription_id = Column(Integer, ForeignKey('subscriptions.id', ondelete='CASCADE'), nullable=False, index=True)
+    tariff_id = Column(Integer, ForeignKey('tariffs.id'), nullable=True)
+
+    platega_subscription_id = Column(String(255), unique=True, nullable=True, index=True)
+    interval = Column(Integer, nullable=False)  # 1=day,2=week,3=month,4=year
+    charge_days = Column(Integer, nullable=False)  # шаг продления за одно списание
+    amount_kopeks = Column(Integer, nullable=False)
+    currency = Column(String(10), nullable=False, default='RUB')
+
+    status = Column(String(20), nullable=False, default='PENDING')  # PENDING/ACTIVE/PAST_DUE/CANCELLED/FAILED
+    redirect_url = Column(Text, nullable=True)
+    next_charge_at = Column(AwareDateTime(), nullable=True)
+    last_charge_at = Column(AwareDateTime(), nullable=True)
+    last_charge_external_id = Column(String(255), nullable=True)  # идемпотентность коллбека по charge Id
+    charges_success = Column(Integer, nullable=False, default=0)
+    charges_failed = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+    user = relationship('User', backref='platega_subscriptions')
+    subscription = relationship('Subscription', backref='platega_subscriptions')
+
+    __table_args__ = (
+        Index('ix_platega_subscriptions_user_active', 'user_id', 'status'),
+        # Одна живая привязка на подписку: гонка конкурентного enable проходит
+        # идемпотентную проверку ДО вставки — индекс делает вторую вставку
+        # IntegrityError, сервис возвращает существующую запись (миграция 0100).
+        Index(
+            'uq_platega_subscriptions_alive',
+            'subscription_id',
+            unique=True,
+            postgresql_where=text("status IN ('PENDING', 'ACTIVE', 'PAST_DUE')"),
+            sqlite_where=text("status IN ('PENDING', 'ACTIVE', 'PAST_DUE')"),
+        ),
+    )
+
+    @property
+    def amount_rubles(self) -> float:
+        return self.amount_kopeks / 100
+
+
+class LavaSubscription(Base):
+    """Рекуррентная подписка Lava, привязанная к подписке бота.
+
+    Аналог :class:`PlategaSubscription`. Отличие: сумма и периодичность заданы
+    ПРОДУКТОМ в кабинете Lava (``lava_product_id``), а не выводятся из тарифа —
+    ``charge_days`` копируется из продукта на момент оформления.
+    """
+
+    __tablename__ = 'lava_subscriptions'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    subscription_id = Column(Integer, ForeignKey('subscriptions.id', ondelete='CASCADE'), nullable=False, index=True)
+    tariff_id = Column(Integer, ForeignKey('tariffs.id'), nullable=True)
+
+    lava_subscription_id = Column(String(255), unique=True, nullable=True, index=True)
+    lava_product_id = Column(String(255), nullable=False)
+    lava_consumer_id = Column(String(255), nullable=True)
+    # orderId подписки: по нему вебхук отличает списание по подписке от инвойса
+    order_id = Column(String(255), unique=True, nullable=False, index=True)
+
+    charge_days = Column(Integer, nullable=False)  # шаг продления за одно списание
+    amount_kopeks = Column(Integer, nullable=False)
+    currency = Column(String(10), nullable=False, default='RUB')
+
+    status = Column(String(20), nullable=False, default='PENDING')  # PENDING/ACTIVE/PAST_DUE/CANCELLED/FAILED
+    redirect_url = Column(Text, nullable=True)
+    next_charge_at = Column(AwareDateTime(), nullable=True)
+    last_charge_at = Column(AwareDateTime(), nullable=True)
+    last_charge_external_id = Column(String(255), nullable=True)  # идемпотентность коллбека по invoice_id
+    charges_success = Column(Integer, nullable=False, default=0)
+    charges_failed = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+    user = relationship('User', backref='lava_subscriptions')
+    subscription = relationship('Subscription', backref='lava_subscriptions')
+
+    __table_args__ = (
+        Index('ix_lava_subscriptions_user_active', 'user_id', 'status'),
+        # Одна живая привязка на подписку: проигравший гонку enable ловит
+        # IntegrityError и возвращает победителя (зеркало Platega).
+        Index(
+            'uq_lava_subscriptions_alive',
+            'subscription_id',
+            unique=True,
+            postgresql_where=text("status IN ('PENDING', 'ACTIVE', 'PAST_DUE')"),
+            sqlite_where=text("status IN ('PENDING', 'ACTIVE', 'PAST_DUE')"),
+        ),
+    )
+
+    @property
+    def amount_rubles(self) -> float:
+        return self.amount_kopeks / 100
 
 
 class CloudPaymentsPayment(Base):
@@ -878,6 +1104,633 @@ class SeverPayPayment(Base):
         return f'<SeverPayPayment(id={self.id}, order_id={self.order_id}, amount={self.amount_rubles}₽, status={self.status})>'
 
 
+class PayPearPayment(Base):
+    """Платежи через PayPear (paypear.ru)."""
+
+    __tablename__ = 'paypear_payments'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+
+    # Идентификаторы
+    order_id = Column(String(64), unique=True, nullable=False, index=True)  # Наш internal ID
+    paypear_id = Column(String(64), unique=True, nullable=True, index=True)  # ID от PayPear
+
+    # Суммы
+    amount_kopeks = Column(Integer, nullable=False)
+    currency = Column(String(10), nullable=False, default='RUB')
+    description = Column(Text, nullable=True)
+
+    # Статусы
+    status = Column(String(32), nullable=False, default='pending')
+    is_paid = Column(Boolean, default=False)
+
+    # Данные платежа
+    payment_url = Column(Text, nullable=True)
+    payment_method = Column(String(32), nullable=True)
+
+    # Метаданные
+    metadata_json = Column(JSON, nullable=True)
+    callback_payload = Column(JSON, nullable=True)
+
+    # Временные метки
+    paid_at = Column(AwareDateTime(), nullable=True)
+    expires_at = Column(AwareDateTime(), nullable=True)
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+    # Связь с транзакцией
+    transaction_id = Column(Integer, ForeignKey('transactions.id'), nullable=True)
+
+    # Relationships
+    user = relationship('User', backref='paypear_payments')
+    transaction = relationship('Transaction', backref='paypear_payment')
+
+    @property
+    def amount_rubles(self) -> float:
+        return self.amount_kopeks / 100
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status == 'pending'
+
+    @property
+    def is_success(self) -> bool:
+        return self.status == 'success' and self.is_paid
+
+    @property
+    def is_failed(self) -> bool:
+        return self.status in ['failed', 'expired', 'canceled', 'amount_mismatch']
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f'<PayPearPayment(id={self.id}, order_id={self.order_id}, amount={self.amount_rubles}₽, status={self.status})>'
+
+
+class RollyPayPayment(Base):
+    """Платежи через RollyPay (rollypay.io)."""
+
+    __tablename__ = 'rollypay_payments'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+
+    # Идентификаторы
+    order_id = Column(String(64), unique=True, nullable=False, index=True)  # Наш internal ID
+    rollypay_payment_id = Column(String(128), unique=True, nullable=True, index=True)  # pay_uuid от RollyPay
+
+    # Суммы
+    amount_kopeks = Column(Integer, nullable=False)
+    currency = Column(String(10), nullable=False, default='RUB')
+    description = Column(Text, nullable=True)
+
+    # Статусы
+    status = Column(String(32), nullable=False, default='pending')
+    is_paid = Column(Boolean, default=False)
+
+    # Данные платежа
+    payment_url = Column(Text, nullable=True)
+    payment_method = Column(String(32), nullable=True)
+
+    # Метаданные
+    metadata_json = Column(JSON, nullable=True)
+    callback_payload = Column(JSON, nullable=True)
+
+    # Временные метки
+    paid_at = Column(AwareDateTime(), nullable=True)
+    expires_at = Column(AwareDateTime(), nullable=True)
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+    # Связь с транзакцией
+    transaction_id = Column(Integer, ForeignKey('transactions.id'), nullable=True)
+
+    # Relationships
+    user = relationship('User', backref='rollypay_payments')
+    transaction = relationship('Transaction', backref='rollypay_payment')
+
+    @property
+    def amount_rubles(self) -> float:
+        return self.amount_kopeks / 100
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status == 'pending'
+
+    @property
+    def is_success(self) -> bool:
+        return self.status == 'success' and self.is_paid
+
+    @property
+    def is_failed(self) -> bool:
+        return self.status in ['failed', 'expired', 'canceled', 'chargeback', 'amount_mismatch']
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f'<RollyPayPayment(id={self.id}, order_id={self.order_id}, amount={self.amount_rubles}₽, status={self.status})>'
+
+
+class OverpayPayment(Base):
+    """Платежи через Overpay (pay.overpay.io)."""
+
+    __tablename__ = 'overpay_payments'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+
+    # Идентификаторы
+    order_id = Column(String(64), unique=True, nullable=False, index=True)  # Наш internal ID
+    overpay_payment_id = Column(String(128), unique=True, nullable=True, index=True)  # ID от Overpay
+
+    # Суммы
+    amount_kopeks = Column(Integer, nullable=False)
+    currency = Column(String(10), nullable=False, default='RUB')
+    description = Column(Text, nullable=True)
+
+    # Статусы
+    status = Column(String(32), nullable=False, default='pending')
+    is_paid = Column(Boolean, default=False)
+
+    # Данные платежа
+    payment_url = Column(Text, nullable=True)
+    payment_method = Column(String(32), nullable=True)
+
+    # Метаданные
+    metadata_json = Column(JSON, nullable=True)
+    callback_payload = Column(JSON, nullable=True)
+
+    # Временные метки
+    paid_at = Column(AwareDateTime(), nullable=True)
+    expires_at = Column(AwareDateTime(), nullable=True)
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+    # Связь с транзакцией
+    transaction_id = Column(Integer, ForeignKey('transactions.id'), nullable=True)
+
+    # Relationships
+    user = relationship('User', backref='overpay_payments')
+    transaction = relationship('Transaction', backref='overpay_payment')
+
+    @property
+    def amount_rubles(self) -> float:
+        return self.amount_kopeks / 100
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status == 'pending'
+
+    @property
+    def is_success(self) -> bool:
+        return self.status == 'success' and self.is_paid
+
+    @property
+    def is_failed(self) -> bool:
+        return self.status in ['failed', 'expired', 'canceled', 'chargeback', 'amount_mismatch']
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f'<OverpayPayment(id={self.id}, order_id={self.order_id}, amount={self.amount_rubles}₽, status={self.status})>'
+
+
+class AuraPayPayment(Base):
+    """Платежи через AuraPay (aurapay.tech)."""
+
+    __tablename__ = 'aurapay_payments'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+
+    # Идентификаторы
+    order_id = Column(String(64), unique=True, nullable=False, index=True)  # Наш internal ID
+    aurapay_invoice_id = Column(String(128), unique=True, nullable=True, index=True)  # UUID от AuraPay
+
+    # Суммы
+    amount_kopeks = Column(Integer, nullable=False)
+    currency = Column(String(10), nullable=False, default='RUB')
+    description = Column(Text, nullable=True)
+
+    # Статусы
+    status = Column(String(32), nullable=False, default='pending')
+    is_paid = Column(Boolean, default=False)
+
+    # Данные платежа
+    payment_url = Column(Text, nullable=True)
+    payment_method = Column(String(32), nullable=True)
+
+    # Метаданные
+    metadata_json = Column(JSON, nullable=True)
+    callback_payload = Column(JSON, nullable=True)
+
+    # Временные метки
+    paid_at = Column(AwareDateTime(), nullable=True)
+    expires_at = Column(AwareDateTime(), nullable=True)
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+    # Связь с транзакцией
+    transaction_id = Column(Integer, ForeignKey('transactions.id'), nullable=True)
+
+    # Relationships
+    user = relationship('User', backref='aurapay_payments')
+    transaction = relationship('Transaction', backref='aurapay_payment')
+
+    @property
+    def amount_rubles(self) -> float:
+        return self.amount_kopeks / 100
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status == 'pending'
+
+    @property
+    def is_success(self) -> bool:
+        return self.status == 'success' and self.is_paid
+
+    @property
+    def is_failed(self) -> bool:
+        return self.status in ['failed', 'expired', 'canceled', 'amount_mismatch']
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f'<AuraPayPayment(id={self.id}, order_id={self.order_id}, amount={self.amount_rubles}₽, status={self.status})>'
+
+
+class EtoplatezhiPayment(Base):
+    """Платежи через Etoplatezhi (paymentpage.etoplatezhi.ru)."""
+
+    __tablename__ = 'etoplatezhi_payments'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+
+    # Идентификаторы
+    order_id = Column(String(64), unique=True, nullable=False, index=True)  # Наш internal ID
+    etoplatezhi_payment_id = Column(String(128), unique=True, nullable=True, index=True)  # ID от Etoplatezhi
+
+    # Суммы
+    amount_kopeks = Column(Integer, nullable=False)
+    currency = Column(String(10), nullable=False, default='RUB')
+    description = Column(Text, nullable=True)
+
+    # Статусы
+    status = Column(String(32), nullable=False, default='pending')
+    is_paid = Column(Boolean, default=False)
+
+    # Данные платежа
+    payment_url = Column(Text, nullable=True)
+    payment_method = Column(String(32), nullable=True)
+
+    # Метаданные
+    metadata_json = Column(JSON, nullable=True)
+    callback_payload = Column(JSON, nullable=True)
+
+    # Временные метки
+    paid_at = Column(AwareDateTime(), nullable=True)
+    expires_at = Column(AwareDateTime(), nullable=True)
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+    # Связь с транзакцией
+    transaction_id = Column(Integer, ForeignKey('transactions.id'), nullable=True)
+
+    # Relationships
+    user = relationship('User', backref='etoplatezhi_payments')
+    transaction = relationship('Transaction', backref='etoplatezhi_payment')
+
+    @property
+    def amount_rubles(self) -> float:
+        return self.amount_kopeks / 100
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status == 'pending'
+
+    @property
+    def is_success(self) -> bool:
+        return self.status == 'success' and self.is_paid
+
+    @property
+    def is_failed(self) -> bool:
+        return self.status in ['failed', 'expired', 'canceled', 'amount_mismatch']
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f'<EtoplatezhiPayment(id={self.id}, order_id={self.order_id}, amount={self.amount_rubles}₽, status={self.status})>'
+
+
+class AntilopayPayment(Base):
+    """Платежи через Antilopay (lk.antilopay.com)."""
+
+    __tablename__ = 'antilopay_payments'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+
+    # Идентификаторы
+    order_id = Column(String(64), unique=True, nullable=False, index=True)  # Наш internal ID
+    antilopay_payment_id = Column(String(128), unique=True, nullable=True, index=True)  # ID от Antilopay (APAY...)
+
+    # Суммы
+    amount_kopeks = Column(Integer, nullable=False)
+    currency = Column(String(10), nullable=False, default='RUB')
+    description = Column(Text, nullable=True)
+
+    # Статусы
+    status = Column(String(32), nullable=False, default='pending')
+    is_paid = Column(Boolean, default=False)
+
+    # Данные платежа
+    payment_url = Column(Text, nullable=True)
+    payment_method = Column(String(32), nullable=True)
+
+    # Метаданные
+    metadata_json = Column(JSON, nullable=True)
+    callback_payload = Column(JSON, nullable=True)
+
+    # Временные метки
+    paid_at = Column(AwareDateTime(), nullable=True)
+    expires_at = Column(AwareDateTime(), nullable=True)
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+    # Связь с транзакцией
+    transaction_id = Column(Integer, ForeignKey('transactions.id'), nullable=True)
+
+    # Relationships
+    user = relationship('User', backref='antilopay_payments')
+    transaction = relationship('Transaction', backref='antilopay_payment')
+
+    @property
+    def amount_rubles(self) -> float:
+        return self.amount_kopeks / 100
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status == 'pending'
+
+    @property
+    def is_success(self) -> bool:
+        return self.status == 'success' and self.is_paid
+
+    @property
+    def is_failed(self) -> bool:
+        return self.status in ['failed', 'expired', 'canceled', 'amount_mismatch']
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f'<AntilopayPayment(id={self.id}, order_id={self.order_id}, amount={self.amount_rubles}₽, status={self.status})>'
+
+
+class JupiterPayment(Base):
+    """Платежи через Jupiter (FPGate P2P v2.1, app.juppiter.tech)."""
+
+    __tablename__ = 'jupiter_payments'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+
+    # Идентификаторы
+    order_id = Column(String(64), unique=True, nullable=False, index=True)  # Наш internal ID
+    jupiter_transaction_id = Column(String(128), unique=True, nullable=True, index=True)  # transaction_id от Jupiter
+
+    # Суммы
+    amount_kopeks = Column(Integer, nullable=False)
+    currency = Column(String(10), nullable=False, default='RUB')
+    description = Column(Text, nullable=True)
+
+    # Статусы
+    status = Column(String(32), nullable=False, default='pending')
+    is_paid = Column(Boolean, default=False)
+
+    # Данные платежа
+    payment_url = Column(Text, nullable=True)  # qrcode_url из details (если есть)
+    payment_method = Column(String(32), nullable=True)  # 'sbp' и т.д.
+
+    # Метаданные
+    metadata_json = Column(JSON, nullable=True)
+    callback_payload = Column(JSON, nullable=True)
+
+    # Временные метки
+    paid_at = Column(AwareDateTime(), nullable=True)
+    expires_at = Column(AwareDateTime(), nullable=True)
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+    # Связь с транзакцией
+    transaction_id = Column(Integer, ForeignKey('transactions.id'), nullable=True)
+
+    # Relationships
+    user = relationship('User', backref='jupiter_payments')
+    transaction = relationship('Transaction', backref='jupiter_payment')
+
+    @property
+    def amount_rubles(self) -> float:
+        return self.amount_kopeks / 100
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status == 'pending'
+
+    @property
+    def is_success(self) -> bool:
+        return self.status == 'success' and self.is_paid
+
+    @property
+    def is_failed(self) -> bool:
+        return self.status in ['failed', 'expired', 'cancelled', 'amount_mismatch', 'declined', 'error']
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f'<JupiterPayment(id={self.id}, order_id={self.order_id}, amount={self.amount_rubles}₽, status={self.status})>'
+
+
+class DonutPayment(Base):
+    """Платежи через Donut P2P (gw.donut.business)."""
+
+    __tablename__ = 'donut_payments'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+
+    # Идентификаторы
+    order_id = Column(String(64), unique=True, nullable=False, index=True)  # Наш internal ID
+    donut_transaction_id = Column(String(128), unique=True, nullable=True, index=True)  # transaction_id от Donut
+
+    # Суммы
+    amount_kopeks = Column(Integer, nullable=False)
+    currency = Column(String(10), nullable=False, default='RUB')
+    description = Column(Text, nullable=True)
+
+    # Статусы
+    status = Column(String(32), nullable=False, default='pending')
+    is_paid = Column(Boolean, default=False)
+
+    # Данные платежа
+    payment_url = Column(Text, nullable=True)  # redirect_url или qrcode_url
+    payment_method = Column(String(32), nullable=True)  # 'card', 'sbp', 'sbp_qr'
+
+    # Метаданные
+    metadata_json = Column(JSON, nullable=True)
+    callback_payload = Column(JSON, nullable=True)
+
+    # Временные метки
+    paid_at = Column(AwareDateTime(), nullable=True)
+    expires_at = Column(AwareDateTime(), nullable=True)
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+    # Связь с транзакцией
+    transaction_id = Column(Integer, ForeignKey('transactions.id'), nullable=True)
+
+    # Relationships
+    user = relationship('User', backref='donut_payments')
+    transaction = relationship('Transaction', backref='donut_payment')
+
+    @property
+    def amount_rubles(self) -> float:
+        return self.amount_kopeks / 100
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status in ('pending', 'created', 'processing')
+
+    @property
+    def is_success(self) -> bool:
+        return self.status == 'success' and self.is_paid
+
+    @property
+    def is_failed(self) -> bool:
+        return self.status in ['failed', 'expired', 'cancelled', 'amount_mismatch', 'error']
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f'<DonutPayment(id={self.id}, order_id={self.order_id}, amount={self.amount_rubles}₽, status={self.status})>'
+
+
+class LavaPayment(Base):
+    """Платежи через Lava Business (gate.lava.ru)."""
+
+    __tablename__ = 'lava_payments'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+
+    # Идентификаторы
+    order_id = Column(String(64), unique=True, nullable=False, index=True)  # Наш orderId
+    lava_invoice_id = Column(String(128), unique=True, nullable=True, index=True)  # invoice_id (UUID) от Lava
+
+    # Суммы
+    amount_kopeks = Column(Integer, nullable=False)
+    currency = Column(String(10), nullable=False, default='RUB')
+    description = Column(Text, nullable=True)
+
+    # Статусы
+    status = Column(String(32), nullable=False, default='pending')
+    is_paid = Column(Boolean, default=False)
+
+    # Данные платежа
+    payment_url = Column(Text, nullable=True)
+    payment_method = Column(String(32), nullable=True)  # 'card', 'sbp' и т.д.
+
+    # Метаданные
+    metadata_json = Column(JSON, nullable=True)
+    callback_payload = Column(JSON, nullable=True)
+
+    # Временные метки
+    paid_at = Column(AwareDateTime(), nullable=True)
+    expires_at = Column(AwareDateTime(), nullable=True)
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+    # Связь с транзакцией
+    transaction_id = Column(Integer, ForeignKey('transactions.id'), nullable=True)
+
+    # Relationships
+    user = relationship('User', backref='lava_payments')
+    transaction = relationship('Transaction', backref='lava_payment')
+
+    @property
+    def amount_rubles(self) -> float:
+        return self.amount_kopeks / 100
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status in ('pending', 'created', 'processing')
+
+    @property
+    def is_success(self) -> bool:
+        return self.status == 'success' and self.is_paid
+
+    @property
+    def is_failed(self) -> bool:
+        return self.status in ['failed', 'expired', 'cancel', 'cancelled', 'amount_mismatch', 'error']
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return (
+            f'<LavaPayment(id={self.id}, order_id={self.order_id}, amount={self.amount_rubles}₽, status={self.status})>'
+        )
+
+
+class CisPayPayment(Base):
+    """Платежи через cisPay (api.cispay.app, H2H карта/СБП)."""
+
+    __tablename__ = 'cispay_payments'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+
+    # Идентификаторы
+    order_id = Column(String(64), unique=True, nullable=False, index=True)  # Наш order_id
+    cispay_payment_id = Column(String(64), unique=True, nullable=True, index=True)  # id (UUIDv7) от cisPay
+
+    # Суммы
+    amount_kopeks = Column(Integer, nullable=False)
+    # Сумма к оплате покупателем (может включать комиссию, если её платит покупатель)
+    charged_amount_kopeks = Column(Integer, nullable=True)
+    currency = Column(String(10), nullable=False, default='RUB')
+    description = Column(Text, nullable=True)
+
+    # Статусы
+    status = Column(String(32), nullable=False, default='pending')
+    is_paid = Column(Boolean, default=False)
+
+    # Данные платежа
+    payment_url = Column(Text, nullable=True)
+    payment_method = Column(String(32), nullable=True)  # 'CARD' / 'SBP'
+
+    # Метаданные
+    metadata_json = Column(JSON, nullable=True)
+    callback_payload = Column(JSON, nullable=True)
+
+    # Временные метки
+    paid_at = Column(AwareDateTime(), nullable=True)
+    expires_at = Column(AwareDateTime(), nullable=True)
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+    # Связь с транзакцией
+    transaction_id = Column(Integer, ForeignKey('transactions.id'), nullable=True)
+
+    # Relationships
+    user = relationship('User', backref='cispay_payments')
+    transaction = relationship('Transaction', backref='cispay_payment')
+
+    @property
+    def amount_rubles(self) -> float:
+        return self.amount_kopeks / 100
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status == 'pending'
+
+    @property
+    def is_success(self) -> bool:
+        return self.status == 'success' and self.is_paid
+
+    @property
+    def is_failed(self) -> bool:
+        return self.status in ['failed', 'declined', 'expired', 'refunded', 'amount_mismatch', 'error']
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return (
+            f'<CisPayPayment(id={self.id}, order_id={self.order_id}, '
+            f'amount={self.amount_rubles}₽, status={self.status})>'
+        )
+
+
 class PromoGroup(Base):
     __tablename__ = 'promo_groups'
 
@@ -1029,6 +1882,10 @@ class Tariff(Base):
     is_daily = Column(Boolean, default=False, nullable=False)  # Является ли тариф суточным
     daily_price_kopeks = Column(Integer, default=0, nullable=False)  # Цена за день в копейках
 
+    # UUID продукта Lava для рекуррентных подписок: цена и периодичность списаний
+    # задаются в кабинете Lava, здесь только привязка тарифа к продукту.
+    lava_product_id = Column(String(255), nullable=True)
+
     # Произвольное количество дней
     custom_days_enabled = Column(Boolean, default=False, nullable=False)  # Разрешить произвольное кол-во дней
     price_per_day_kopeks = Column(Integer, default=0, nullable=False)  # Цена за 1 день в копейках
@@ -1073,10 +1930,45 @@ class Tariff(Base):
         prices = self.period_prices or {}
         return prices.get(str(period_days))
 
+    @property
+    def is_free(self) -> bool:
+        """Тариф полностью бесплатный (все доступные цены = 0).
+
+        Используется при смене тарифа: дни, наспамленные на бесплатном (0₽) тарифе,
+        не переносятся на платный — см. extend_subscription / TARIFF_SWITCH_RESET_FREE_DAYS.
+        """
+        if self.is_daily:
+            return (self.daily_price_kopeks or 0) <= 0
+        prices = list((self.period_prices or {}).values())
+        if not prices:
+            return False
+        return all((price or 0) <= 0 for price in prices)
+
     def get_available_periods(self) -> list[int]:
         """Возвращает список доступных периодов в днях."""
         prices = self.period_prices or {}
         return sorted([int(p) for p in prices.keys()])
+
+    def get_purchasable_periods(self) -> list[int]:
+        """Периоды, доступные для покупки, с учётом суточных тарифов.
+
+        У суточных тарифов ``period_prices`` пуст — оплата идёт за день,
+        поэтому единственный «период» покупки равен 1 дню. Для обычных
+        тарифов поведение совпадает с :meth:`get_available_periods`.
+        """
+        if self.is_daily and self.daily_price_kopeks:
+            return [1]
+        return self.get_available_periods()
+
+    def get_purchasable_price_for_period(self, period_days: int) -> int | None:
+        """Цена за период с учётом суточных тарифов.
+
+        Для суточного тарифа период в 1 день стоит ``daily_price_kopeks``;
+        в остальных случаях используется обычная цена из ``period_prices``.
+        """
+        if self.is_daily and period_days == 1:
+            return self.daily_price_kopeks or None
+        return self.get_price_for_period(period_days)
 
     def get_shortest_period(self) -> int | None:
         """Возвращает минимальный доступный период в днях (для автопродления)."""
@@ -1192,18 +2084,29 @@ class User(Base):
     created_at = Column(AwareDateTime(), default=func.now())
     updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
     last_activity = Column(AwareDateTime(), default=func.now())
+    # Панельный идентификатор пользователя (Remnawave 3.0.0: числовой id).
+    # remnawave_uuid оставлен как исторические данные, читается только одноразовым бэкфилом (восстановление идентичности).
+    remnawave_id = Column(BigInteger, nullable=True, unique=True, index=True)
     remnawave_uuid = Column(String(255), nullable=True, unique=True)
 
     # Cabinet authentication fields
     email = Column(String(255), unique=True, nullable=True, index=True)
     email_verified = Column(Boolean, default=False, nullable=False)
     email_verified_at = Column(AwareDateTime(), nullable=True)
+    # Источник верификации email — используется как trust signal для admin escalation.
+    # 'cabinet'/'oauth_google'/'oauth_discord' доверяем (real ownership proof);
+    # 'oauth_vk'/'oauth_yandex' — email используется, но НЕ trusted для ADMIN_EMAILS match.
+    # NULL для legacy строк до миграции 0079 (трактуется так же, как 'cabinet' для
+    # bootstrap-compat — см. is_user_admin_by_env).
+    email_verification_source = Column(String(32), nullable=True)
     password_hash = Column(String(255), nullable=True)
     email_verification_token = Column(String(255), nullable=True)
     email_verification_expires = Column(AwareDateTime(), nullable=True)
     password_reset_token = Column(String(255), nullable=True)
     password_reset_expires = Column(AwareDateTime(), nullable=True)
     cabinet_last_login = Column(AwareDateTime(), nullable=True)
+    # Campaign slug saved at registration, consumed at email verification
+    pending_campaign_slug = Column(String(64), nullable=True)
     # Email change fields
     email_change_new = Column(String(255), nullable=True)  # New email pending verification
     email_change_code = Column(String(6), nullable=True)  # 6-digit verification code
@@ -1231,8 +2134,26 @@ class User(Base):
         for sub in self.subscriptions:
             if sub.status in (SubscriptionStatus.ACTIVE.value, SubscriptionStatus.TRIAL.value):
                 return sub
-        # Fallback to most recent (already ordered by created_at desc)
-        return self.subscriptions[0]
+        # Fallback to most recent real subscription (already ordered by created_at desc).
+        # Неоплаченные черновики триала пропускаем — иначе меню покажет незавершённую
+        # покупку триала как существующую подписку.
+        for sub in self.subscriptions:
+            if not sub.is_pending_trial:
+                return sub
+        return None
+
+    def is_trial_already_used(self) -> bool:
+        """Единый гейт доступности триала для бота И кабинета.
+
+        Раньше проверка дублировалась 4× в боте (purchase.py) и 2× в кабинете, причём
+        с разной логикой. Триал недоступен, если пользователь уже оплачивал подписку
+        ЛИБО у него есть ЛЮБАЯ подписка — кроме PENDING-триала (это повторная попытка
+        оплаты того же триала). Проверяются ВСЕ подписки (multi-tariff-safe). Требует
+        загруженного `subscriptions`.
+        """
+        if self.has_had_paid_subscription:
+            return True
+        return any(not sub.is_pending_trial for sub in (self.subscriptions or []))
 
     transactions = relationship('Transaction', back_populates='user')
     referral_earnings = relationship('ReferralEarning', foreign_keys='ReferralEarning.user_id', back_populates='user')
@@ -1255,7 +2176,7 @@ class User(Base):
     user_promo_groups = relationship('UserPromoGroup', back_populates='user', cascade='all, delete-orphan')
     poll_responses = relationship('PollResponse', back_populates='user')
     admin_roles_rel = relationship('UserRole', foreign_keys='[UserRole.user_id]', back_populates='user')
-    notification_settings = Column(JSON, nullable=True, default=dict)
+    notification_settings = Column(JSONB, nullable=True, default=dict)
     last_pinned_message_id = Column(Integer, nullable=True)
 
     # Ограничения пользователя
@@ -1352,6 +2273,8 @@ class Subscription(Base):
         Index('ix_subscriptions_user_id', 'user_id'),
         Index('ix_subscriptions_user_status', 'user_id', 'status'),
         Index('ix_subscriptions_user_tariff_status', 'user_id', 'tariff_id', 'status'),
+        Index('ix_subscriptions_grace_expiry_scan', 'status', 'is_trial', 'end_date'),
+        Index('ix_subscriptions_grace_candidate', 'grace_candidate_at', 'grace_candidate_reason'),
         Index(
             'uq_subscriptions_user_tariff_active',
             'user_id',
@@ -1359,6 +2282,21 @@ class Subscription(Base):
             unique=True,
             postgresql_where=text("tariff_id IS NOT NULL AND status IN ('active', 'trial', 'limited')"),
         ),
+        # Панельная идентичность подписки. Уникальность частичная: непривязанных
+        # подписок (remnawave_id IS NULL) может быть сколько угодно, а вот две
+        # подписки на одного панельного пользователя — всегда ошибка. Код это и
+        # так предполагал (scalar_one_or_none в crud/user.py), но ничем не
+        # гарантировал; попутно снимает seq-scan с горячего webhook/grace-пути.
+        Index(
+            'uq_subscriptions_remnawave_id',
+            'remnawave_id',
+            unique=True,
+            postgresql_where=text('remnawave_id IS NOT NULL'),
+            sqlite_where=text('remnawave_id IS NOT NULL'),
+        ),
+        # shortUuid пережил 3.0.0 и остаётся единственным панельным ключом,
+        # которым можно резолвить строку, потерявшую связь.
+        Index('ix_subscriptions_remnawave_short_uuid', 'remnawave_short_uuid'),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -1387,13 +2325,29 @@ class Subscription(Base):
 
     autopay_enabled = Column(Boolean, default=False)
     autopay_days_before = Column(Integer, default=3)
+    # NULL → fall back to settings.DEFAULT_AUTOPAY_PERIOD_DAYS, then tariff shortest period
+    autopay_period_days = Column(Integer, nullable=True)
 
     created_at = Column(AwareDateTime(), default=func.now())
     updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
 
     last_webhook_update_at = Column(AwareDateTime(), nullable=True)
+    last_revoke_at = Column(AwareDateTime(), nullable=True)
+
+    # Grace-access ingress marker.  Only trusted status transitions set the
+    # candidate timestamp; generic updated_at/webhooks must not resurrect old
+    # expired subscriptions when the feature is enabled.
+    grace_candidate_reason = Column(String(16), nullable=True)
+    grace_candidate_at = Column(AwareDateTime(), nullable=True)
+    # Administrative cancellation/shortening suppresses only the current
+    # incident. A later renewal has a newer end_date and becomes eligible again.
+    grace_suppressed_until = Column(AwareDateTime(), nullable=True)
 
     remnawave_short_uuid = Column(String(255), nullable=True)
+    # Панельный идентификатор пользователя. С Remnawave 3.0.0 это числовой id —
+    # поле uuid из UsersSchema удалено. remnawave_uuid оставлен как исторические
+    # данные для аудита и разбора незарезолвленных строк; читается только одноразовым бэкфилом (восстановление идентичности).
+    remnawave_id = Column(BigInteger, nullable=True)
     remnawave_uuid = Column(String(255), nullable=True)
     remnawave_short_id = Column(
         String(16), nullable=False, unique=True, server_default=''
@@ -1417,12 +2371,26 @@ class Subscription(Base):
     traffic_purchases = relationship(
         'TrafficPurchase', back_populates='subscription', passive_deletes=True, cascade='all, delete-orphan'
     )
+    grace_access_sessions = relationship(
+        'GraceAccessSessionModel', back_populates='subscription', passive_deletes=True, lazy='noload'
+    )
 
     @property
     def is_active(self) -> bool:
         current_time = datetime.now(UTC)
         end = _aware(self.end_date)
         return self.status == SubscriptionStatus.ACTIVE.value and end is not None and end > current_time
+
+    @property
+    def is_pending_trial(self) -> bool:
+        """Неоплаченный черновик триала (PENDING + is_trial).
+
+        Такой драфт создаётся при выборе способа оплаты платного триала и означает
+        «повторную попытку оплаты», а не реальную подписку. Он не считается
+        использованным триалом (см. User.is_trial_already_used) и не должен
+        отображаться в пользовательских меню как существующая подписка.
+        """
+        return self.status == SubscriptionStatus.PENDING.value and bool(self.is_trial)
 
     @property
     def is_expired(self) -> bool:
@@ -1577,14 +2545,112 @@ class Subscription(Base):
         return True
 
 
+class GraceAccessSessionModel(Base):
+    """Persistent snapshot for one restricted grace-access incident."""
+
+    __tablename__ = 'grace_access_sessions'
+    __table_args__ = (
+        UniqueConstraint(
+            'subscription_id',
+            'incident_key',
+            name='uq_grace_access_sessions_incident',
+        ),
+        CheckConstraint(
+            "reason IN ('expired', 'limited')",
+            name='ck_grace_access_sessions_reason',
+        ),
+        CheckConstraint(
+            "state IN ('pending', 'active', 'restoring', 'completed')",
+            name='ck_grace_access_sessions_state',
+        ),
+        CheckConstraint(
+            """
+            (
+                state = 'completed'
+                AND completion_reason IS NOT NULL
+                AND completion_reason IN ('paid', 'timeout', 'drained', 'conflict', 'revoked')
+                AND completed_at IS NOT NULL
+            )
+            OR
+            (
+                state <> 'completed'
+                AND completion_reason IS NULL
+                AND completed_at IS NULL
+            )
+            """,
+            name='ck_grace_access_sessions_completion',
+        ),
+        CheckConstraint(
+            'grace_until > started_at',
+            name='ck_grace_access_sessions_dates',
+        ),
+        CheckConstraint(
+            'snapshot_version > 0',
+            name='ck_grace_access_sessions_snapshot_version',
+        ),
+        CheckConstraint(
+            'version > 0',
+            name='ck_grace_access_sessions_version',
+        ),
+        Index(
+            'uq_grace_access_sessions_one_open',
+            'subscription_id',
+            unique=True,
+            postgresql_where=text("state IN ('pending', 'active', 'restoring')"),
+            sqlite_where=text("state IN ('pending', 'active', 'restoring')"),
+        ),
+        Index(
+            'ix_grace_access_sessions_state_until',
+            'state',
+            'grace_until',
+        ),
+    )
+
+    id = Column(String(36), primary_key=True)
+    subscription_id = Column(Integer, ForeignKey('subscriptions.id', ondelete='CASCADE'), nullable=False)
+    # Панельная идентичность сессии (Remnawave 3.0.0: числовой id). Nullable на
+    # время бэкфила: колонку нельзя добавить сразу NOT NULL на живой таблице, а
+    # флип делается отдельной ревизией после проверки нулей.
+    remnawave_id = Column(BigInteger, nullable=True, index=True)
+    # Ослаблено до nullable в 0104: панель 3.0.0 не отдаёт uuid, поэтому новые
+    # сессии его физически не могут заполнить. Историческое поле.
+    remnawave_uuid = Column(String(255), nullable=True)
+    reason = Column(String(16), nullable=False)
+    incident_key = Column(String(255), nullable=False)
+    state = Column(String(16), nullable=False)
+
+    snapshot_version = Column(Integer, nullable=False, default=2, server_default='2')
+    version = Column(Integer, nullable=False, default=1, server_default='1')
+    billing_before = Column(JSON, nullable=False)
+    panel_before = Column(JSON, nullable=False)
+    overlay = Column(JSON, nullable=False)
+
+    started_at = Column(AwareDateTime(), nullable=False)
+    grace_until = Column(AwareDateTime(), nullable=False)
+    updated_at = Column(AwareDateTime(), nullable=False)
+    completion_reason = Column(String(16), nullable=True)
+    completed_at = Column(AwareDateTime(), nullable=True)
+    last_error = Column(Text, nullable=True)
+
+    subscription = relationship('Subscription', back_populates='grace_access_sessions')
+
+
 class TrafficPurchase(Base):
     """Докупка трафика с индивидуальной датой истечения."""
 
     __tablename__ = 'traffic_purchases'
-    __table_args__ = (Index('ix_traffic_purchases_created_at', 'created_at'),)
+    __table_args__ = (
+        Index('ix_traffic_purchases_created_at', 'created_at'),
+        # Composite index ускоряет housekeeping-запросы вида
+        # `WHERE subscription_id = :id AND expires_at <op> :now` (DELETE/SELECT
+        # в _housekeep_expired_purchases / _apply_base_limit_preserving_active_purchases).
+        Index('ix_traffic_purchases_sub_expires', 'subscription_id', 'expires_at'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    subscription_id = Column(Integer, ForeignKey('subscriptions.id', ondelete='CASCADE'), nullable=False, index=True)
+    # subscription_id: индекс не нужен — leftmost prefix покрывается композитным
+    # ix_traffic_purchases_sub_expires(subscription_id, expires_at).
+    subscription_id = Column(Integer, ForeignKey('subscriptions.id', ondelete='CASCADE'), nullable=False)
 
     traffic_gb = Column(Integer, nullable=False)  # Количество ГБ в покупке
     expires_at = Column(AwareDateTime(), nullable=False, index=True)  # Дата истечения (покупка + 30 дней)
@@ -1726,6 +2792,73 @@ class PromoCodeUse(Base):
 
     promocode = relationship('PromoCode', back_populates='uses')
     user = relationship('User')
+
+
+class CouponStatus(StrEnum):
+    ACTIVE = 'active'
+    REDEEMED = 'redeemed'
+    REVOKED = 'revoked'
+
+
+class CouponBatch(Base):
+    """Batch of one-time coupons for wholesale/partner sales.
+
+    The admin generates N coupons for a tariff+period, hands the links to a
+    partner and settles payment outside the bot; ``wholesale_price_kopeks``
+    is bookkeeping only.
+    """
+
+    __tablename__ = 'coupon_batches'
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    tariff_id = Column(Integer, ForeignKey('tariffs.id', ondelete='SET NULL'), nullable=True, index=True)
+    period_days = Column(Integer, nullable=False)
+    coupons_total = Column(Integer, nullable=False)
+    wholesale_price_kopeks = Column(Integer, nullable=False, default=0)  # за купон; 0 — не указана
+    # Сколько купонов ЭТОЙ партии может активировать один пользователь.
+    # 0 — без ограничения (прежнее поведение); для раздач/конкурсов ставится 1,
+    # чтобы один человек не забрал всю партию.
+    max_per_user = Column(Integer, nullable=False, default=0)
+    valid_until = Column(AwareDateTime(), nullable=True)
+    # Display-only cache for list views; per-coupon Coupon.status is the
+    # authority (redemption never consults this flag)
+    is_revoked = Column(Boolean, nullable=False, default=False)
+    created_by = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(AwareDateTime(), server_default=func.now())
+    updated_at = Column(AwareDateTime(), server_default=func.now(), onupdate=func.now())
+
+    coupons = relationship('Coupon', back_populates='batch', lazy='noload')
+    tariff = relationship('Tariff', lazy='selectin')
+
+    @property
+    def is_expired(self) -> bool:
+        return self.valid_until is not None and _aware(self.valid_until) < datetime.now(UTC)
+
+    def __repr__(self) -> str:
+        return f"<CouponBatch id={self.id} name='{self.name}'>"
+
+
+class Coupon(Base):
+    """One-time coupon redeemed via the ``/start coupon_<token>`` deep link."""
+
+    __tablename__ = 'coupons'
+    __table_args__ = (Index('ix_coupons_batch_status', 'batch_id', 'status'),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(Integer, ForeignKey('coupon_batches.id', ondelete='CASCADE'), nullable=False)
+    token = Column(String(64), unique=True, nullable=False, index=True)
+    status = Column(String(20), nullable=False, default=CouponStatus.ACTIVE.value)
+    redeemed_by = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+    redeemed_at = Column(AwareDateTime(), nullable=True)
+    created_at = Column(AwareDateTime(), server_default=func.now())
+
+    batch = relationship('CouponBatch', back_populates='coupons', lazy='selectin')
+    user = relationship('User', foreign_keys=[redeemed_by], lazy='noload')
+
+    def __repr__(self) -> str:
+        token_prefix = self.token[:5] if self.token else '?'
+        return f"<Coupon token='{token_prefix}...' status='{self.status}'>"
 
 
 class ReferralEarning(Base):
@@ -2035,6 +3168,40 @@ class PublicOffer(Base):
     updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
 
 
+class LegalConsent(Base):
+    """Отметка «ознакомлен» с офертой/политикой, поставленная при регистрации.
+
+    Смысл чекбокса — в доказательстве, поэтому пишем журнал: кто, с каким документом,
+    когда и откуда согласился. Таблица append-only, уникальности нет намеренно: когда
+    появится переподтверждение после смены редакции документа, новая запись должна
+    лечь рядом со старой, а не затереть её.
+    """
+
+    __tablename__ = 'legal_consents'
+    __table_args__ = (Index('ix_legal_consents_user_document', 'user_id', 'document'),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    document = Column(String(32), nullable=False)
+    accepted_at = Column(AwareDateTime(), default=func.now(), nullable=False)
+    # Откуда поставлена галочка: cabinet_telegram / cabinet_email / …
+    source = Column(String(32), nullable=True)
+    ip_address = Column(String(64), nullable=True)
+
+    user = relationship('User')
+
+
+class RecurrentPayments(Base):
+    __tablename__ = 'recurrent_payments'
+
+    id = Column(Integer, primary_key=True, index=True)
+    language = Column(String(10), nullable=False, unique=True)
+    content = Column(Text, nullable=False)
+    is_enabled = Column(Boolean, default=True, nullable=False)
+    created_at = Column(AwareDateTime(), default=func.now())
+    updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
+
+
 class FaqSetting(Base):
     __tablename__ = 'faq_settings'
 
@@ -2237,6 +3404,9 @@ class BroadcastHistory(Base):
     admin_name = Column(String(255))
     created_at = Column(AwareDateTime(), server_default=func.now())
     completed_at = Column(AwareDateTime(), nullable=True)
+
+    # Broadcast category for user notification preferences filtering
+    category = Column(String(20), default='system', nullable=False)  # system|news|promo
 
     # Email broadcast fields
     channel = Column(String(20), default='telegram', nullable=False)  # telegram|email|both
@@ -2642,6 +3812,8 @@ class TicketMessage(Base):
     media_type = Column(String(20), nullable=True)  # photo, video, document, voice, etc.
     media_file_id = Column(String(255), nullable=True)
     media_caption = Column(Text, nullable=True)
+    # Multi-media gallery (photos/videos/documents bundled in one bubble)
+    media_items = Column(JSONB, nullable=True)
 
     created_at = Column(AwareDateTime(), default=func.now())
 
@@ -2957,6 +4129,11 @@ class WheelSpin(Base):
     # Сгенерированный промокод (если приз - промокод)
     generated_promocode_id = Column(Integer, ForeignKey('promocodes.id'), nullable=True)
 
+    # Telegram Stars charge id — идемпотентность: Telegram доставляет successful_payment
+    # «как минимум один раз», поэтому при повторной доставке апдейта спин по этому charge_id
+    # не должен начислить приз второй раз. Уникальный индекс — гарантия на уровне БД.
+    telegram_charge_id = Column(String(255), nullable=True, unique=True)
+
     # Флаг успешного начисления
     is_applied = Column(Boolean, default=False, nullable=False)
     applied_at = Column(AwareDateTime(), nullable=True)
@@ -3037,10 +4214,13 @@ class PaymentMethodConfig(Base):
 
     # Переопределение отображаемого имени (null = использовать из env)
     display_name = Column(String(255), nullable=True)
+    description = Column(Text, nullable=True)
 
     # Под-опции включения/выключения (JSON): {"card": true, "sbp": false}
     # Для методов с вариантами: yookassa, pal24, platega
     sub_options = Column(JSON, nullable=True, default=None)
+
+    quick_amounts = Column(JSON, nullable=True, default=None)
 
     # Переопределение мин/макс сумм (null = из env)
     min_amount_kopeks = Column(Integer, nullable=True)
@@ -3063,6 +4243,15 @@ class PaymentMethodConfig(Base):
         secondary=payment_method_promo_groups,
         lazy='selectin',
     )
+
+    # Если True — кабинет, получив payment_url от провайдера, сразу делает
+    # window.location.href вместо показа панели "Нажмите чтобы открыть ссылку
+    # оплаты". Внутри Telegram MiniApp это даёт seamless flow — провайдер
+    # открывается в том же WebView, после оплаты return_url возвращает на
+    # /balance/top-up/result. Для t.me/ URL (Telegram Stars, CryptoBot) флаг
+    # игнорируется — такие ссылки всегда идут через нативный handler.
+    # По умолчанию False (классическое поведение со ссылкой) — backwards-compat.
+    open_url_direct = Column(Boolean, nullable=False, default=False)
 
     created_at = Column(AwareDateTime(), default=func.now())
     updated_at = Column(AwareDateTime(), default=func.now(), onupdate=func.now())
@@ -3158,6 +4347,10 @@ class UserRole(Base):
     assigned_at = Column(AwareDateTime(), server_default=func.now())
     expires_at = Column(AwareDateTime(), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    # Источник revoke: 'env' (bootstrap снял по ADMIN_IDS/ADMIN_EMAILS),
+    # 'ui' (senior-админ вручную отозвал через кабинет), NULL (legacy строки
+    # до миграции 0078 или активная запись). Bootstrap reactivates только env/NULL.
+    revocation_source = Column(String(20), nullable=True)
 
     __table_args__ = (UniqueConstraint('user_id', 'role_id', name='uq_user_role'),)
 
@@ -3263,6 +4456,13 @@ class LandingPage(Base):
     background_config = Column(
         JSON, nullable=True
     )  # AnimationConfig: {enabled, type, settings, opacity, blur, reducedOnMobile}
+    # Sticky pay button on mobile (full-width fixed bottom)
+    sticky_pay_button = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    # Yandex Metrika landing-level conversion goals
+    analytics_view_enabled = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    analytics_view_goal = Column(String(64), nullable=True)
+    analytics_click_enabled = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    analytics_click_goal = Column(String(64), nullable=True)
     created_at = Column(AwareDateTime(), server_default=func.now())
     updated_at = Column(AwareDateTime(), server_default=func.now(), onupdate=func.now())
 
@@ -3325,6 +4525,10 @@ class GuestPurchase(Base):
     retry_count = Column(Integer, nullable=False, default=0, server_default='0')
     receipt_uuid = Column(String(255), nullable=True, index=True)
     receipt_created_at = Column(AwareDateTime(), nullable=True)
+    # Yandex Metrika offline conversions: client identifier + traffic source tags
+    yandex_cid = Column(String(128), nullable=True)
+    subid = Column(String(255), nullable=True)
+    referrer = Column(String(500), nullable=True)
 
     landing = relationship('LandingPage', back_populates='guest_purchases', lazy='selectin')
     tariff = relationship('Tariff', lazy='selectin')
@@ -3406,3 +4610,73 @@ class NewsTag(Base):
 
     def __repr__(self) -> str:
         return f"<NewsTag id={self.id} name='{self.name}'>"
+
+
+class YandexClientIdMap(Base):
+    """Yandex Metrika client identifier captured per user.
+
+    Stores the mapping user_id -> yandex_cid so we can fire offline
+    conversion events to mc.yandex.ru with the right CID even after
+    the user leaves the landing/web flow. The ``subid`` column carries
+    a pass-through traffic-source identifier for S2S postbacks.
+    """
+
+    __tablename__ = 'yandex_client_id_map'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), unique=True, nullable=False)
+    yandex_cid = Column(String(128), nullable=False)
+    source = Column(String(20), nullable=False, default='web', server_default='web')
+    counter_id = Column(String(32), nullable=True)
+    registration_sent = Column(Boolean, default=False, server_default=text('false'), nullable=False)
+    trial_sent = Column(Boolean, default=False, server_default=text('false'), nullable=False)
+    subid = Column(String(255), nullable=True)
+    yclid = Column(String(64), nullable=True)
+    created_at = Column(AwareDateTime(), server_default=func.now())
+    updated_at = Column(AwareDateTime(), server_default=func.now(), onupdate=func.now())
+
+
+class InfoPage(Base):
+    """Static informational page with multilingual title/content (JSONB)."""
+
+    __tablename__ = 'info_pages'
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String(200), unique=True, nullable=False)
+    title = Column(JSONB, nullable=False, server_default='{}')
+    content = Column(JSONB, nullable=False, server_default='{}')
+    page_type = Column(String(20), nullable=False, default='page', server_default='page')
+    is_active = Column(Boolean, nullable=False, default=True, server_default='true')
+    sort_order = Column(Integer, nullable=False, default=0, server_default='0')
+    icon = Column(String(50), nullable=True)
+    replaces_tab = Column(String(20), nullable=True)  # 'faq', 'rules', 'privacy', 'offer', or null
+    display_mode = Column(String(10), nullable=False, default='both', server_default='both')
+    created_at = Column(AwareDateTime(), server_default=func.now())
+    updated_at = Column(AwareDateTime(), server_default=func.now(), onupdate=func.now())
+
+
+class UserDeviceAlias(Base):
+    """Local nickname for a RemnaWave HWID device.
+
+    RemnaWave stores devices by HWID + platform + deviceModel. None of these
+    are user-friendly («Android-SM-S908U», «iOS-iPhone15,2»…), so we let the
+    end user assign a short alias («Жены iPhone», «Рабочий ноут»). The
+    alias lives ONLY in our DB — it is never pushed back to the panel and
+    only affects display in the bot / cabinet.
+
+    Scope is per-(user, hwid): the same physical device shares the alias
+    across all of a user's subscriptions in multi-tariff mode. ON DELETE
+    CASCADE on user_id so aliases follow the account through deletion.
+    """
+
+    __tablename__ = 'user_device_aliases'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'hwid', name='uq_user_device_aliases_user_hwid'),
+        Index('ix_user_device_aliases_user_id', 'user_id'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    hwid = Column(String(255), nullable=False)
+    alias = Column(String(64), nullable=False)
+    created_at = Column(AwareDateTime(), server_default=func.now(), nullable=False)
+    updated_at = Column(AwareDateTime(), server_default=func.now(), onupdate=func.now(), nullable=False)
